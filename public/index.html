@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>WebAuthn Demo – FP-UNA</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script src="https://unpkg.com/@simplewebauthn/browser/dist/bundle/index.umd.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+  <link href="style.css" rel="stylesheet">
+</head>
+
+
+<body>
+  <div class="container">
+    <h1>🔐 WebAuthn Demo</h1>
+    <h2>Facultad Politécnica - UNA</h2>
+
+    <input id="username" placeholder="Nombre de usuario (ej: marcelo)" />
+
+    <div class="buttons">
+      <button id="btnReg">Registrar</button>
+      <button id="btnLogin">Ingresar</button>
+    </div>
+
+    <div id="log"></div>
+  </div>
+
+<script>
+const { startRegistration, startAuthentication } = SimpleWebAuthnBrowser;
+const logEl = document.getElementById('log');
+
+function log(msg, type='info') {
+  const line = document.createElement('div');
+  line.className = `log-line ${type}`;
+  line.textContent = msg;
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+
+// ⬇️ post() mejorado: parsea JSON aunque r.ok sea false y lanza error con {status, data}
+async function post(url, body) {
+  const r = await fetch(url, { 
+    method: 'POST', 
+    headers: { 'Content-Type': 'application/json' }, 
+    body: JSON.stringify(body) 
+  });
+  let data = null;
+  try { data = await r.json(); } catch { /* puede no haber cuerpo */ }
+
+  if (!r.ok) {
+    const err = new Error((data && data.msg) || `HTTP ${r.status}`);
+    err.status = r.status;
+    err.data = data;
+    throw err;
+  }
+  return data;
+}
+
+async function handleRegister() {
+  log('🟢 Iniciando registro...');
+  const username = document.getElementById('username').value.trim();
+  if (!username) return alert('Ingrese un nombre de usuario');
+
+  try {
+    const opts = await post('/webauthn/register/start', { username });
+    const attResp = await startRegistration(opts);
+    const vr = await post('/webauthn/register/finish', { username, attestationResponse: attResp });
+    log(vr.ok ? '✅ Registro exitoso' : '❌ Falló el registro', vr.ok ? 'success' : 'error');
+  } catch (e) {
+    console.error(e);
+    if (e.status === 409) {
+      // Mensaje específico desde el backend (username duplicado)
+      log('⚠️ ' + (e.data?.msg || 'El usuario ya existe. Probá iniciar sesión.'), 'warn');
+    } else {
+      log('❌ Error durante el registro: ' + (e.data?.msg || e.message), 'error');
+    }
+  }
+}
+
+async function handleLogin() {
+  log('🟣 Iniciando login...');
+  const username = document.getElementById('username').value.trim();
+  if (!username) return alert('Ingrese un nombre de usuario');
+
+  try {
+    const opts = await post('/webauthn/login/start', { username });
+    const asr = await startAuthentication(opts);
+    const vr = await post('/webauthn/login/finish', { username, assertionResponse: asr });
+    log(vr.ok ? '✅ Login exitoso' : '❌ Falló el login', vr.ok ? 'success' : 'error');
+  } catch (e) {
+    console.error(e);
+    log('❌ Error durante el login: ' + (e.data?.msg || e.message), 'error');
+  }
+}
+
+document.getElementById('btnReg').addEventListener('click', handleRegister);
+document.getElementById('btnLogin').addEventListener('click', handleLogin);
+</script>
+</body>
+</html>

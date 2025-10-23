@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "@simplewebauthn/server": "^13.2.2",
+    "base64url": "^3.0.1",
+    "express": "^5.1.0",
+    "uuid": "^13.0.0"
+  }
+}
