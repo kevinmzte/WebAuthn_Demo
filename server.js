@@ -12,6 +12,8 @@ const express = require('express');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const base64url = require('base64url');
+// username -> { userId, challenge, createdAt }
+const pendingRegs = new Map();
 
 const {
   generateAuthenticationOptions,
@@ -60,41 +62,42 @@ app.post('/webauthn/register/start', async (req, res) => {
   try {
     const { username } = req.body;
 
-    // Validación
     if (!username || typeof username !== 'string' || !username.trim()) {
       return res.status(400).json({ ok: false, msg: 'username requerido' });
     }
 
-    // Tu Map users está indexado por user.id, así que users.has(username) NO sirve.
-    // Usa la búsqueda por valor:
+    // Si YA existe en usuarios definitivos → bloquear (Opción A: usernames únicos)
     const existing = getUserByUsername(username);
     if (existing) {
       return res.status(409).json({ ok: false, msg: 'username ya existe' });
     }
 
-    // Crea el usuario SOLO si no existe
-    const user = { id: uuidv4(), username: username.trim() };
-    users.set(user.id, user);
-
-    const userIdBuf = Buffer.from(user.id, 'utf8');
+    // Generar un userId temporal para esta tentativa
+    const tempUserId = uuidv4();
+    const userIdBuf  = Buffer.from(tempUserId, 'utf8');
 
     const opts = await generateRegistrationOptions({
       rpName,
       rpID,
       userID: userIdBuf,
-      userName: user.username,
-      userDisplayName: user.username,
+      userName: username.trim(),
+      userDisplayName: username.trim(),
       attestationType: 'none',
       authenticatorSelection: {
-        // Si quieres restringir a autenticador del dispositivo actual, descomenta:
-        // authenticatorAttachment: 'platform',
         residentKey: 'preferred',
         userVerification: 'required',
+        // authenticatorAttachment: 'platform', // si querés limitar al dispositivo actual
       },
       supportedAlgorithmIDs: [-7, -257],
     });
 
-    challenges.set(user.id, opts.challenge);
+    // Guardar intento PENDIENTE (no creamos user todavía)
+    pendingRegs.set(username.trim(), {
+      userId: tempUserId,
+      challenge: opts.challenge,
+      createdAt: Date.now(),
+    });
+
     return res.json(opts);
   } catch (err) {
     console.error('❌ Error en /webauthn/register/start:', err);
@@ -103,66 +106,66 @@ app.post('/webauthn/register/start', async (req, res) => {
 });
 
 app.post('/webauthn/register/finish', async (req, res) => {
-  const { username, attestationResponse } = req.body;
-  const user = getUserByUsername(username);
-  if (!user) return res.status(400).json({ ok: false, msg: 'user not found' });
-
   try {
+    const { username, attestationResponse } = req.body;
+    const norm = String(username || '').trim();
+
+    // Debe existir un registro pendiente para ese username
+    const pending = pendingRegs.get(norm);
+    if (!pending) {
+      return res.status(400).json({ ok: false, msg: 'no hay registro pendiente para este username' });
+    }
+
     const verification = await verifyRegistrationResponse({
       response: attestationResponse,
-      expectedChallenge: challenges.get(user.id),
+      expectedChallenge: pending.challenge,
       expectedOrigin: origin,
       expectedRPID: rpID,
     });
 
     if (!verification.verified) {
+      // limpiar pending para permitir reintento limpio
+      pendingRegs.delete(norm);
       return res.json({ ok: false });
     }
 
-    // --- Tomamos todo lo necesario de registrationInfo, con defaults seguros
+    // ✅ Sólo ahora creamos el usuario definitivo con el userId TEMPORAL
+    const user = { id: pending.userId, username: norm };
+    users.set(user.id, user);
+
+    // Guardar credencial
     const info = verification.registrationInfo || {};
     const credential = info.credential || {};
-    const regCounter = Number(info.counter ?? credential.counter ?? 0); // <-- contador siempre definido
-    const deviceType = info.credentialDeviceType;
-    const backedUp = info.credentialBackedUp;
-    const transports = credential.transports;
-
-    // Validación mínima
     if (!credential.id || !credential.publicKey) {
+      pendingRegs.delete(norm);
       return res.status(400).json({ ok: false, msg: 'Credencial inválida' });
     }
 
+    const credIdBuf  = base64url.toBuffer(credential.id);
+    const pubKeyBuf  = Buffer.from(credential.publicKey);
+    const regCounter = Number(info.counter ?? credential.counter ?? 0);
+
     const list = getUserCreds(user.id);
-
-    // Convertir correctamente a Buffer
-    const credIdBuf = base64url.toBuffer(credential.id);
-    const pubKeyBuf = toBuffer(credential.publicKey);
-
-    // Evitar duplicados (comparando buffers correctos)
     if (!list.find(c => c.credentialID.equals(credIdBuf))) {
       list.push({
-        credentialID: credIdBuf,            // Buffer
-        credentialPublicKey: pubKeyBuf,     // Buffer
-        counter: regCounter,                // <-- guarda contador real
-        deviceType,                         // opcional: útil para filtrar en login
-        transports,                         // opcional: allowCredentials + UX
-        backedUp,                           // opcional: informativo
+        credentialID: credIdBuf,
+        credentialPublicKey: pubKeyBuf,
+        counter: regCounter,
+        deviceType: info.credentialDeviceType,
+        transports: credential.transports,
+        backedUp: info.credentialBackedUp,
       });
-
       credentials.set(user.id, list);
-
-      console.log(`Credencial registrada para ${username}: ${base64url.encode(credIdBuf)}`);
-      console.log(`ID base64url guardado: ${base64url.encode(credIdBuf)}`);
-      console.log(`Contador inicial guardado: ${regCounter}`);
-      console.log('PublicKey guardada (bytes):', pubKeyBuf.length);
-    } else {
-      console.log('Credencial ya registrada previamente; no se duplica.');
     }
 
-    res.json({ ok: true });
+    // limpiar pending (registro exitoso)
+    pendingRegs.delete(norm);
+
+    console.log(`- Credencial registrada para ${norm}: ${base64url.encode(credIdBuf)}`);
+    return res.json({ ok: true });
   } catch (e) {
     console.error('❌ Error en registro:', e);
-    res.status(400).json({ ok: false, msg: 'verification failed' });
+    return res.status(400).json({ ok: false, msg: 'verification failed' });
   }
 });
 
@@ -325,8 +328,6 @@ app.post('/webauthn/login/finish', async (req, res) => {
     res.status(400).json({ ok: false, msg: 'verification failed' });
   }
 });
-
-
 
 /** ===================== SERVER ===================== */
 const PORT = 3000;

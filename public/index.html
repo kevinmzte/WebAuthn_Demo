@@ -68,13 +68,23 @@ async function handleRegister() {
     log(vr.ok ? '✅ Registro exitoso' : '❌ Falló el registro', vr.ok ? 'success' : 'error');
   } catch (e) {
     console.error(e);
-    if (e.status === 409) {
-      // Mensaje específico desde el backend (username duplicado)
-      log('⚠️ ' + (e.data?.msg || 'El usuario ya existe. Probá iniciar sesión.'), 'warn');
-    } else {
-      log('❌ Error durante el registro: ' + (e.data?.msg || e.message), 'error');
+
+    // Cancelación del prompt o timeout del sistema (Android, iOS, desktop)
+    if (e.name === 'NotAllowedError' || e.name === 'AbortError' || /not allowed|timed out/i.test(String(e.message))) {
+      log('⚠️ Registro cancelado. No se guardó nada. Podés reintentarlo o probar con otro nombre.', 'warn');
+      return;
     }
+
+    // Username duplicado (desde el backend)
+    if (e.status === 409) {
+      log('⚠️ Ese nombre de usuario ya existe. Iniciá sesión o elegí otro.', 'warn');
+      return;
+    }
+
+    // Cualquier otro error (sin exponer detalles técnicos al usuario)
+    log('❌ No pudimos completar el registro. Intentá de nuevo en unos segundos.', 'error');
   }
+
 }
 
 async function handleLogin() {
@@ -87,10 +97,26 @@ async function handleLogin() {
     const asr = await startAuthentication(opts);
     const vr = await post('/webauthn/login/finish', { username, assertionResponse: asr });
     log(vr.ok ? '✅ Login exitoso' : '❌ Falló el login', vr.ok ? 'success' : 'error');
-  } catch (e) {
+ } catch (e) {
     console.error(e);
-    log('❌ Error durante el login: ' + (e.data?.msg || e.message), 'error');
+
+    // Cancelación o timeout del sistema (Android, iOS, Windows Hello, etc.)
+    if (e.name === 'NotAllowedError' || e.name === 'AbortError' || /not allowed|timed out/i.test(String(e.message))) {
+      log('⚠️ Inicio de sesión cancelado. Podés volver a intentarlo cuando quieras.', 'warn');
+      return;
+    }
+    
+
+    // Usuario no encontrado u otro error del servidor
+    if (e.status === 404) {
+      log('⚠️ El usuario no existe o no tiene credenciales registradas.', 'warn');
+      return;
+    }
+
+    // Otros errores genéricos (sin mostrar texto técnico)
+    log('❌ No se pudo completar el inicio de sesión. Intentá nuevamente.', 'error');
   }
+
 }
 
 document.getElementById('btnReg').addEventListener('click', handleRegister);
