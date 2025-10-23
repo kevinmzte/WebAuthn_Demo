@@ -21,8 +21,8 @@ RP ID y Origin deben coincidir con la URL real desde donde se carga el frontend.
 Opción A) Con ngrok (recomendado para móviles)
 En otra terminal(la de ngrok si es posible)
 ngrok http 3000
-
-Copiá la URL pública (por ej. https://tu-subdominio.ngrok-free.dev).
+Luego de eso, te dará una URL pública y 
+Copiála (por ej. https://tu-subdominio.ngrok-free.dev).
 Asegurate de que en server.js:
 rpID = 'tu-subdominio.ngrok-free.dev' (sin https://)
 origin = 'https://tu-subdominio.ngrok-free.dev'
