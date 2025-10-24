@@ -6,9 +6,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <script src="https://unpkg.com/@simplewebauthn/browser/dist/bundle/index.umd.min.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/png" href="/block_code.png">
   <link href="style.css" rel="stylesheet">
 </head>
-
 
 <body>
   <div class="container">
@@ -37,7 +37,7 @@ function log(msg, type='info') {
   logEl.scrollTop = logEl.scrollHeight;
 }
 
-// ⬇️ post() mejorado: parsea JSON aunque r.ok sea false y lanza error con {status, data}
+// post() mejorado: parsea JSON aunque r.ok sea false y lanza error con {status, data}
 async function post(url, body) {
   const r = await fetch(url, { 
     method: 'POST', 
@@ -60,10 +60,10 @@ async function handleRegister() {
   const username = document.getElementById('username').value.trim();
   if (!username) {
     alert('Ingrese un nombre de usuario');
-    return; // ⬅️ salimos sin loguear nada
+    return; // salimos sin loguear nada
   }
 
-  log('🟢 Iniciando registro...'); // ⬅️ ahora sí, después de validar
+  log('🟢 Iniciando registro...'); // ahora sí, después de validar
 
   try {
     const opts = await post('/webauthn/register/start', { username });
@@ -73,9 +73,9 @@ async function handleRegister() {
   } catch (e) {
     console.error(e);
     if (e.name === 'NotAllowedError' || e.name === 'AbortError' || /not allowed|timed out/i.test(String(e.message))) {
-      log('⚠️ Registro cancelado. No se guardó nada. Podés reintentarlo o probar con otro nombre.', 'warn');
+      log('💡 Registro cancelado. No se guardó nada. Puedes reintentarlo o probar con otro nombre.', 'infor');
     } else if (e.status === 409) {
-      log('⚠️ Ese nombre de usuario ya existe. Iniciá sesión o elegí otro.', 'warn');
+      log('⚠️ Ese nombre de usuario ya existe. Inicia sesión o elegí otro.', 'warn');
     } else {
       log('❌ No pudimos completar el registro. Intentá de nuevo en unos segundos.', 'error');
     }
@@ -86,7 +86,7 @@ async function handleLogin() {
   const username = document.getElementById('username').value.trim();
   if (!username) {
     alert('Ingrese un nombre de usuario');
-    return; // ⬅️ sin logs si está vacío
+    return; // sin logs si está vacío
   }
 
   log('🟣 Iniciando login...');
@@ -99,7 +99,7 @@ async function handleLogin() {
   } catch (e) {
     console.error(e);
     if (e.name === 'NotAllowedError' || e.name === 'AbortError' || /not allowed|timed out/i.test(String(e.message))) {
-      log('⚠️ Inicio de sesión cancelado. Podés volver a intentarlo cuando quieras.', 'warn');
+      log('💡 Inicio de sesión cancelado. Puedes volver a intentarlo cuando quieras.', 'infor');
     } else if (e.status === 404) {
       log('⚠️ El usuario no existe o no tiene credenciales registradas.', 'warn');
     } else {

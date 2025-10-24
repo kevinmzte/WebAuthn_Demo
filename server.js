@@ -129,7 +129,7 @@ app.post('/webauthn/register/finish', async (req, res) => {
       return res.json({ ok: false });
     }
 
-    // ✅ Sólo ahora creamos el usuario definitivo con el userId TEMPORAL
+    // Sólo ahora creamos el usuario definitivo con el userId TEMPORAL
     const user = { id: pending.userId, username: norm };
     users.set(user.id, user);
 
@@ -171,33 +171,52 @@ app.post('/webauthn/register/finish', async (req, res) => {
 
 /** ===================== LOGIN ===================== */
 app.post('/webauthn/login/start', async (req, res) => {
-  const { username } = req.body;
-  const user = getUserByUsername(username);
-  if (!user) return res.status(400).json({ ok: false, msg: 'user no encontrado' });
+  try {
+    const { username } = req.body;
 
-  const userCreds = getUserCreds(user.id);
-  if (!userCreds || userCreds.length === 0) {
-    return res.status(400).json({ ok: false, msg: 'No credentials found for this user' });
+    // Validación básica
+    if (!username || typeof username !== 'string' || !username.trim()) {
+      return res.status(422).json({ ok: false, msg: 'username requerido' });
+    }
+
+    const user = getUserByUsername(username);
+    // 404: usuario no encontrado
+    if (!user) {
+      return res.status(404).json({ ok: false, msg: 'Usuario no encontrado' });
+    }
+
+    const userCreds = getUserCreds(user.id) || [];
+    // 404: usuario sin credenciales registradas
+    if (userCreds.length === 0) {
+      return res.status(404).json({ ok: false, msg: 'El usuario no tiene credenciales registradas' });
+    }
+
+    // Construir allowCredentials (podés quitar el filtro si querés aceptar todos)
+    const allowCredentials = userCreds
+      .filter(c => !c.deviceType || c.deviceType === 'platform')
+      .map(c => ({
+        id: base64url.encode(c.credentialID),
+        type: 'public-key',
+        transports: c.transports,
+      }));
+
+    // Si el filtro dejó vacío, devolvemos 404 coherente para el frontend
+    if (allowCredentials.length === 0) {
+      return res.status(404).json({ ok: false, msg: 'No hay credenciales compatibles para este dispositivo' });
+    }
+
+    const opts = await generateAuthenticationOptions({
+      rpID,
+      userVerification: 'required',
+      allowCredentials,
+    });
+
+    challenges.set(user.id, opts.challenge);
+    return res.json(opts);
+  } catch (err) {
+    console.error('❌ Error en /webauthn/login/start:', err);
+    return res.status(500).json({ ok: false, msg: 'internal error' });
   }
-
-  const allowCredentials = userCreds
-    // si no existe deviceType (credenciales antiguas), no filtramos
-    .filter(c => !c.deviceType || c.deviceType === 'platform')
-    .map(c => ({
-      id: base64url.encode(c.credentialID),
-      type: 'public-key',
-      transports: c.transports, // si las guardaste en el registro
-    }));
-
-  const opts = await generateAuthenticationOptions({
-    rpID,
-    userVerification: 'required',
-    allowCredentials,
-  });
-
-
-  challenges.set(user.id, opts.challenge);
-  res.json(opts);
 });
 
 

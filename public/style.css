@@ -12,7 +12,7 @@
     * { box-sizing: border-box; }
 
   .log-line.warn { color: #d39e00; }
-
+  .log-line.infor{ color: #d39e00; }
 
     body {
       font-family: 'Inter', system-ui, sans-serif;
