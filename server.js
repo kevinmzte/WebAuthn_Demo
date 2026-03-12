@@ -28,10 +28,10 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 /** ===================== CONFIG ===================== */
 const rpName = 'FP-UNA Demo';
-// const rpID = 'localhost';
-// const origin = 'http://localhost:3000';
-const rpID = 'postacetabular-gilbert-industriously.ngrok-free.dev';
-const origin = 'https://postacetabular-gilbert-industriously.ngrok-free.dev';
+const rpID = 'localhost';
+const origin = 'http://localhost:3000';
+//const rpID = 'postacetabular-gilbert-industriously.ngrok-free.dev';
+//const origin = 'https://postacetabular-gilbert-industriously.ngrok-free.dev';
 
 /** ===================== "DB" en memoria ===================== */
 const users = new Map();         // username -> { id<string>, username }
